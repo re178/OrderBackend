@@ -1,114 +1,222 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Admin Dashboard</title>
 <style>
   body { font-family: Arial, sans-serif; background: #f0f2f5; padding: 20px; }
   h1 { text-align:center; color: #333; }
-  table { width:100%; border-collapse: collapse; margin-top:20px; background:white; }
-  th, td { border:1px solid #ccc; padding:8px; text-align:left; }
+  .card { max-width: 1100px; margin: 0 auto; background: #fff; padding: 16px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,.06); }
+  .row { display: grid; gap: 12px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  table { width:100%; border-collapse: collapse; margin-top: 12px; background: white; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; vertical-align: top; }
   th { background:#007BFF; color:white; }
-  button { padding:5px 10px; margin:2px; cursor:pointer; }
-  a.download { text-decoration:none; color:#007BFF; }
-  textarea, input { width: 100%; margin:5px 0; padding:5px; }
+  button { padding:8px 12px; margin:2px; cursor:pointer; border-radius:8px; border: none; }
+  .btn { background:#007BFF; color:#fff; }
+  .btn-danger { background:#e53935; color:#fff; }
+  input, textarea { width: 100%; padding: 8px; border:1px solid #ccc; border-radius: 8px; }
+  .hidden { display:none; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; }
 </style>
 </head>
 <body>
-<h1>Admin Dashboard</h1>
+  <h1>Admin Dashboard</h1>
 
-<div style="text-align:center;">
-  <button onclick="downloadPDF()">Download All Orders PDF</button>
-</div>
+  <!-- Login Card -->
+  <div id="loginCard" class="card">
+    <h2>Admin Login</h2>
+    <div class="row">
+      <input type="password" id="adminPassword" placeholder="Enter admin password" />
+      <button class="btn" onclick="login()">Login</button>
+      <p id="loginMsg" style="color:#e53935;"></p>
+    </div>
+  </div>
 
-<h2>Orders List</h2>
-<table id="ordersTable">
-  <thead>
-    <tr>
-      <th>#</th>
-      <th>Name</th>
-      <th>Email</th>
-      <th>Category</th>
-      <th>Requirements</th>
-      <th>File</th>
-      <th>Date</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
+  <!-- Dashboard Card -->
+  <div id="dashCard" class="card hidden">
+    <div class="topbar">
+      <div>
+        <button class="btn" onclick="downloadPDF()">Download All Orders PDF</button>
+        <button class="btn-danger" onclick="logout()">Logout</button>
+      </div>
+      <small id="statusText"></small>
+    </div>
 
-<h2>Send Email to Client</h2>
-<input type="email" id="singleEmail" placeholder="Client email">
-<input type="text" id="emailSubject" placeholder="Subject">
-<textarea id="emailMessage" placeholder="Message"></textarea>
-<button onclick="sendEmail()">Send Email</button>
+    <h2>Orders List</h2>
+    <table id="ordersTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Category</th>
+          <th>Requirements</th>
+          <th>File</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
 
-<h2>Send Email to All Clients</h2>
-<input type="text" id="allSubject" placeholder="Subject">
-<textarea id="allMessage" placeholder="Message"></textarea>
-<button onclick="sendEmailAll()">Send to All</button>
+    <div class="grid-2" style="margin-top: 16px;">
+      <div>
+        <h3>Send Email to One Client</h3>
+        <input type="email" id="singleEmail" placeholder="Client email" />
+        <input type="text" id="emailSubject" placeholder="Subject" />
+        <textarea id="emailMessage" placeholder="Message (supports HTML)"></textarea>
+        <button class="btn" onclick="sendEmail()">Send Email</button>
+      </div>
+
+      <div>
+        <h3>Send Email to All Clients</h3>
+        <input type="text" id="allSubject" placeholder="Subject" />
+        <textarea id="allMessage" placeholder="Message (supports HTML)"></textarea>
+        <button class="btn" onclick="sendEmailAll()">Send to All</button>
+      </div>
+    </div>
+  </div>
 
 <script>
+const API = '/admin/api';
+function getToken(){ return localStorage.getItem('admintoken'); }
+function setToken(t){ localStorage.setItem('admintoken', t); }
+function clearToken(){ localStorage.removeItem('admintoken'); }
+
+function show(el){ el.classList.remove('hidden'); }
+function hide(el){ el.classList.add('hidden'); }
+
+async function login(){
+  const password = document.getElementById('adminPassword').value.trim();
+  const msg = document.getElementById('loginMsg');
+  msg.textContent = '';
+  try{
+    const res = await fetch(`${API}/login`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ password })
+    });
+    if(!res.ok){ msg.textContent = 'Invalid password'; return; }
+    const data = await res.json();
+    setToken(data.token);
+    document.getElementById('adminPassword').value = '';
+    await refreshUI();
+  }catch(e){
+    msg.textContent = 'Network error';
+  }
+}
+
+function logout(){
+  clearToken();
+  refreshUI();
+}
+
+async function authFetch(url, options={}){
+  const token = getToken();
+  const headers = Object.assign({ 'Authorization': 'Bearer ' + token }, options.headers || {});
+  const merged = Object.assign({}, options, { headers });
+  return fetch(url, merged);
+}
+
 async function fetchOrders(){
-  const res = await fetch('/admin/orders-data');
-  const orders = await res.json();
-  const tbody = document.querySelector('#ordersTable tbody');
-  tbody.innerHTML = '';
-  orders.forEach(order => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${order.index+1}</td>
-      <td>${order.fullname}</td>
-      <td>${order.email}</td>
-      <td>${order.category}</td>
-      <td>${order.requirements}</td>
-      <td>${order.file ? '<a href="/uploads/'+order.file+'" target="_blank" class="download">Download</a>':'No file'}</td>
-      <td>${order.date}</td>
-      <td>
-        <button onclick="deleteOrder(${order.index})">Delete</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
+  const res = await authFetch(`${API}/orders-data`);
+  if(!res.ok){
+    throw new Error('Auth fail or server error');
+  }
+  return res.json();
 }
 
 async function deleteOrder(index){
   if(!confirm('Are you sure you want to delete this order?')) return;
-  await fetch(`/admin/order/${index}`, { method:'DELETE' });
-  fetchOrders();
+  const res = await authFetch(`${API}/order/${index}`, { method:'DELETE' });
+  if(!res.ok){ alert('Delete failed'); return; }
+  loadOrders();
 }
 
 function downloadPDF(){
-  window.location.href = '/admin/orders/pdf';
+  const token = getToken();
+  // open in new tab with auth header is tricky; use fetch+blob:
+  authFetch(`${API}/orders/pdf`).then(async res=>{
+    if(!res.ok){ alert('Cannot download'); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'orders.pdf'; a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+async function loadOrders(){
+  const tbody = document.querySelector('#ordersTable tbody');
+  tbody.innerHTML = '<tr><td colspan="8">Loading…</td></tr>';
+  try{
+    const orders = await fetchOrders();
+    tbody.innerHTML = '';
+    if(orders.length === 0){
+      tbody.innerHTML = '<tr><td colspan="8">No orders yet.</td></tr>';
+    }
+    orders.forEach(order => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${order.index + 1}</td>
+        <td>${order.fullname}</td>
+        <td>${order.email}</td>
+        <td>${order.category}</td>
+        <td>${order.requirements}</td>
+        <td>${order.file ? '<a href="/uploads/'+order.file+'" target="_blank">Download</a>' : 'No file'}</td>
+        <td>${order.date}</td>
+        <td><button class="btn-danger" onclick="deleteOrder(${order.index})">Delete</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }catch(e){
+    tbody.innerHTML = '<tr><td colspan="8">Auth required or server error.</td></tr>';
+  }
 }
 
 async function sendEmail(){
-  const email = document.getElementById('singleEmail').value;
-  const subject = document.getElementById('emailSubject').value;
-  const message = document.getElementById('emailMessage').value;
-  const res = await fetch('/admin/email-client',{
+  const email = document.getElementById('singleEmail').value.trim();
+  const subject = document.getElementById('emailSubject').value.trim();
+  const message = document.getElementById('emailMessage').value.trim();
+  const res = await authFetch(`${API}/email-client`, {
     method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({email, subject, message})
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ email, subject, message })
   });
   alert(await res.text());
 }
 
 async function sendEmailAll(){
-  const subject = document.getElementById('allSubject').value;
-  const message = document.getElementById('allMessage').value;
-  const res = await fetch('/admin/email-all',{
+  const subject = document.getElementById('allSubject').value.trim();
+  const message = document.getElementById('allMessage').value.trim();
+  const res = await authFetch(`${API}/email-all`, {
     method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({subject, message})
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ subject, message })
   });
   alert(await res.text());
 }
 
-// Load orders initially
-fetchOrders();
+async function refreshUI(){
+  const token = getToken();
+  const loginCard = document.getElementById('loginCard');
+  const dashCard  = document.getElementById('dashCard');
+  const statusTxt = document.getElementById('statusText');
+
+  if(token){
+    hide(loginCard);
+    show(dashCard);
+    statusTxt.textContent = 'Logged in';
+    loadOrders();
+  } else {
+    show(loginCard);
+    hide(dashCard);
+    statusTxt.textContent = '';
+  }
+}
+refreshUI();
 </script>
 </body>
 </html>
