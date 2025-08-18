@@ -1,6 +1,4 @@
-/* server.js */
 require('dotenv').config();
-
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
@@ -16,14 +14,14 @@ app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// === Static files for dashboard & uploads ===
+// === Static files ===
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/admin', express.static(path.join(__dirname, 'public')));
 
-// === File uploads ===
+// === Multer for optional file uploads ===
 const upload = multer({ dest: 'uploads/' });
 
-// === Email transporter ===
+// === Nodemailer ===
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -32,7 +30,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// === JWT Auth helpers ===
+// === JWT helpers ===
 function makeToken() {
   return jwt.sign({ role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '2h' });
 }
@@ -50,37 +48,49 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// === Admin Login ===
+// === Admin login ===
 app.post('/admin/api/login', (req, res) => {
   const { password } = req.body;
   const adminHash = process.env.ADMIN_HASH || '';
   const adminPlain = process.env.ADMIN_PASSWORD || '';
+
   let ok = false;
   if (adminHash) ok = bcrypt.compareSync(password, adminHash);
   else if (adminPlain) ok = password === adminPlain;
+
   if (!ok) return res.status(401).json({ message: 'Invalid password' });
+
   const token = makeToken();
   return res.json({ token });
 });
 
-// === VISITOR TRACKING ===
+// === Visitor Tracking ===
 const visitorFile = path.join(__dirname, 'visitors.json');
-
 app.post('/log-visit', (req, res) => {
   let visitors = [];
-  if (fs.existsSync(visitorFile)) visitors = JSON.parse(fs.readFileSync(visitorFile));
-  visitors.push({ time: new Date().toISOString(), page: req.body.page || 'unknown', ip: req.ip });
+  if (fs.existsSync(visitorFile)) {
+    visitors = JSON.parse(fs.readFileSync(visitorFile));
+  }
+
+  visitors.push({
+    time: new Date().toISOString(),
+    page: req.body.page || 'unknown',
+    ip: req.ip
+  });
+
   fs.writeFileSync(visitorFile, JSON.stringify(visitors, null, 2));
   res.sendStatus(200);
 });
 
 app.get('/admin/api/get-visits', authMiddleware, (req, res) => {
   let visitors = [];
-  if (fs.existsSync(visitorFile)) visitors = JSON.parse(fs.readFileSync(visitorFile));
+  if (fs.existsSync(visitorFile)) {
+    visitors = JSON.parse(fs.readFileSync(visitorFile));
+  }
   res.json(visitors);
 });
 
-// === LOCK / UNLOCK ORDERS ===
+// === Lock/Unlock Orders ===
 const lockFile = path.join(__dirname, 'orders_locked.json');
 function isOrdersLocked() {
   if (!fs.existsSync(lockFile)) return false;
@@ -110,7 +120,7 @@ app.post('/submit-order', upload.single('fileupload'), async (req, res) => {
   if (!fs.existsSync('orders.csv')) fs.writeFileSync('orders.csv', '');
   fs.appendFileSync('orders.csv', line);
 
-  // Notify admin
+  // Admin notification
   if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     try {
       await transporter.sendMail({
@@ -127,6 +137,7 @@ app.post('/submit-order', upload.single('fileupload'), async (req, res) => {
       });
     } catch (err) { console.log('Admin email error:', err.message); }
 
+    // Client auto-reply
     try {
       await transporter.sendMail({
         from: process.env.EMAIL_USER,
@@ -150,10 +161,19 @@ app.post('/submit-order', upload.single('fileupload'), async (req, res) => {
 // === Admin APIs ===
 app.get('/admin/api/orders-data', authMiddleware, (req, res) => {
   if (!fs.existsSync('orders.csv')) return res.json([]);
-  const data = fs.readFileSync('orders.csv', 'utf8').split('\n').filter(l => l.trim() !== '');
+  const data = fs.readFileSync('orders.csv', 'utf8')
+    .split('\n').filter(l => l.trim() !== '');
   const orders = data.map((line, i) => {
     const parts = line.split(/","|^"|"$/g).filter(p => p);
-    return { index: i, fullname: parts[0], email: parts[1], category: parts[2], requirements: parts[3], file: parts[4], date: parts[5] };
+    return {
+      index: i,
+      fullname: parts[0],
+      email: parts[1],
+      category: parts[2],
+      requirements: parts[3],
+      file: parts[4],
+      date: parts[5]
+    };
   });
   res.json(orders);
 });
@@ -161,26 +181,30 @@ app.get('/admin/api/orders-data', authMiddleware, (req, res) => {
 app.delete('/admin/api/order/:index', authMiddleware, (req, res) => {
   const idx = parseInt(req.params.index, 10);
   if (!fs.existsSync('orders.csv')) return res.status(400).send('No orders');
-  const lines = fs.readFileSync('orders.csv', 'utf8').split('\n').filter(l => l.trim() !== '');
+  const lines = fs.readFileSync('orders.csv', 'utf8')
+    .split('\n').filter(l => l.trim() !== '');
   if (idx < 0 || idx >= lines.length) return res.status(400).send('Invalid index');
   lines.splice(idx, 1);
   fs.writeFileSync('orders.csv', lines.join('\n') + (lines.length ? '\n' : ''));
   res.send('Order deleted');
 });
 
-// === Reject Order with Email ===
+// Reject order
 app.post('/admin/api/reject-order/:index', authMiddleware, async (req, res) => {
   const idx = parseInt(req.params.index, 10);
   if (!fs.existsSync('orders.csv')) return res.status(400).send('No orders');
-  const lines = fs.readFileSync('orders.csv', 'utf8').split('\n').filter(l => l.trim() !== '');
+  const lines = fs.readFileSync('orders.csv', 'utf8')
+    .split('\n').filter(l => l.trim() !== '');
   if (idx < 0 || idx >= lines.length) return res.status(400).send('Invalid index');
 
   const parts = lines[idx].split(/","|^"|"$/g).filter(p => p);
-  const email = parts[1], fullname = parts[0];
+  const email = parts[1]; 
+  const fullname = parts[0];
 
   lines.splice(idx, 1);
   fs.writeFileSync('orders.csv', lines.join('\n') + (lines.length ? '\n' : ''));
 
+  // Notify client
   if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     try {
       await transporter.sendMail({
@@ -197,29 +221,65 @@ app.post('/admin/api/reject-order/:index', authMiddleware, async (req, res) => {
   res.send('Order rejected and client notified');
 });
 
-// === Send Email Single / All Clients ===
+// Send emails
 app.post('/admin/api/email-client', authMiddleware, async (req, res) => {
   const { email, subject, message } = req.body;
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return res.status(500).send('Email not configured');
-  try { await transporter.sendMail({ from: process.env.EMAIL_USER, to: email, subject, html: message }); res.send('Email sent successfully'); }
-  catch (err) { res.status(500).send('Error sending email: ' + err.message); }
-});
-
-app.post('/admin/api/email-all', authMiddleware, async (req
-// === GET VISITOR STATS ===
-app.get('/admin/api/visitors', authMiddleware, (req, res) => {
-  let visitors = [];
-  if (fs.existsSync(visitorFile)) {
-    visitors = JSON.parse(fs.readFileSync(visitorFile));
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    return res.status(500).send('Email not configured');
   }
-  res.json(visitors);
+  try {
+    await transporter.sendMail({ from: process.env.EMAIL_USER, to: email, subject, html: message });
+    res.send('Email sent successfully');
+  } catch (err) {
+    res.status(500).send('Error sending email: ' + err.message);
+  }
 });
 
-// === DEFAULT ROUTE ===
-app.get('/', (req, res) => {
-  res.send('Welcome to GigiCraft Hub Backend');
+app.post('/admin/api/email-all', authMiddleware, async (req, res) => {
+  const { subject, message } = req.body;
+  if (!fs.existsSync('orders.csv')) return res.status(400).send('No clients');
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    return res.status(500).send('Email not configured');
+  }
+  const data = fs.readFileSync('orders.csv', 'utf8').split('\n').filter(l => l.trim() !== '');
+  const emails = data.map(line => line.split(/","|^"|"$/g).filter(p => p)[1]);
+
+  try {
+    for (const e of emails) {
+      await transporter.sendMail({ from: process.env.EMAIL_USER, to: e, subject, html: message });
+    }
+    res.send('Emails sent to all clients');
+  } catch (err) {
+    res.status(500).send('Error sending emails: ' + err.message);
+  }
 });
 
-// === START SERVER ===
+// PDF Generation
+app.get('/admin/api/orders/pdf', authMiddleware, (req, res) => {
+  if (!fs.existsSync('orders.csv')) return res.status(404).send('No orders');
+  const data = fs.readFileSync('orders.csv', 'utf8')
+    .split('\n').filter(l => l.trim() !== '');
+
+  const doc = new PDFDocument({ margin:30, size:'A4' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename=orders.pdf');
+  doc.pipe(res);
+
+  doc.fontSize(20).fillColor('#007BFF').text('GigiCraft Hub Orders', { align:'center' });
+  doc.moveDown(0.5);
+  doc.fontSize(12).fillColor('black').text(`Admin Email: ${process.env.EMAIL_USER || 'N/A'}`, { align:'center' });
+  doc.moveDown(1);
+
+  data.forEach((line,i)=>{
+    const parts = line.split(/","|^"|"$/g).filter(p=>p);
+    doc.fontSize(12).fillColor('black').text(
+      `${i+1}. Name: ${parts[0]}, Email: ${parts[1]}, Category: ${parts[2]}, Requirements: ${parts[3]}, File: ${parts[4] || 'No file'}, Date: ${new Date(parts[5]).toLocaleString()}`
+    );
+    doc.moveDown(0.5);
+  });
+
+  doc.end();
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
+app.listen(PORT, ()=>console.log(`Backend running on port ${PORT}`));
