@@ -8,6 +8,101 @@ const path = require('path');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+// === PostgreSQL (Render now, ElephantSQL later) ===
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL, // Render Internal/External or ElephantSQL
+  ssl: { rejectUnauthorized: false }
+});
+
+// Ensure table exists (non-blocking). If DB is down, CSV continues to work.
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id SERIAL PRIMARY KEY,
+        fullname TEXT,
+        email TEXT,
+        category TEXT,
+        requirements TEXT,
+        file TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    console.log('✅ orders table ready');
+  } catch (e) {
+    console.log('⚠️ DB init skipped (using CSV fallback):', e.message);
+  }
+})();
+
+// ---- CSV <-> DB sync helpers ----
+const ORDERS_CSV = path.join(__dirname, 'orders.csv');
+
+// Parse CSV lines -> array of objects (tolerates optional id at the end)
+function parseCsvOrders() {
+  if (!fs.existsSync(ORDERS_CSV)) return [];
+  const lines = fs.readFileSync(ORDERS_CSV, 'utf8').split('\n').filter(l => l.trim() !== '');
+  return lines.map((line, i) => {
+    const parts = line.split(/","|^"|"$/g).filter(p => p);
+    // parts: [fullname, email, category, requirements, file, date, (optional) id]
+    const obj = {
+      index: i,
+      fullname: parts[0],
+      email: parts[1],
+      category: parts[2],
+      requirements: parts[3],
+      file: parts[4],
+      date: parts[5]
+    };
+    if (parts[6]) obj.id = parts[6]; // DB id if present
+    return obj;
+  });
+}
+
+// Write array of order objects back to CSV (keeps optional id if present)
+function writeCsvOrders(rows) {
+  const lines = rows.map(r => {
+    const base = [
+      r.fullname ?? '',
+      r.email ?? '',
+      r.category ?? '',
+      r.requirements ?? '',
+      r.file ?? '',
+      r.date ?? ''
+    ].map(v => `"${(v + '').replace(/"/g, '""')}"`).join(',');
+    // append id if present
+    return r.id ? `${base},"${r.id}"` : base;
+  });
+  fs.writeFileSync(ORDERS_CSV, lines.join('\n') + (lines.length ? '\n' : ''));
+}
+
+// If CSV missing/empty, rebuild it from DB so admin keeps working
+async function ensureCsvFromDb() {
+  try {
+    const exists = fs.existsSync(ORDERS_CSV);
+    const isEmpty = !exists || fs.readFileSync(ORDERS_CSV, 'utf8').trim() === '';
+    if (!isEmpty) return;
+
+    const r = await pool.query('SELECT id, fullname, email, category, requirements, file, created_at FROM orders ORDER BY created_at DESC');
+    const rows = r.rows.map(row => ({
+      fullname: row.fullname || '',
+      email: row.email || '',
+      category: row.category || '',
+      requirements: row.requirements || '',
+      file: row.file || '',
+      date: (row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at) || '',
+      id: String(row.id)
+    }));
+    writeCsvOrders(rows);
+    console.log('🔁 CSV rebuilt from DB');
+  } catch (e) {
+    console.log('⚠️ Could not rebuild CSV from DB:', e.message);
+  }
+}
+
+// Run heal-on-start (non-blocking)
+ensureCsvFromDb();
 
 const app = express();
 app.use(cors());
@@ -119,6 +214,41 @@ app.post('/submit-order', upload.single('fileupload'), async (req, res) => {
 
   if (!fs.existsSync('orders.csv')) fs.writeFileSync('orders.csv', '');
   fs.appendFileSync('orders.csv', line);
+  // Mirror to DB; then stamp DB id into the same CSV line (so later actions map 1:1)
+  try {
+    const ins = await pool.query(
+      `INSERT INTO orders (fullname, email, category, requirements, file, created_at)
+       VALUES ($1, $2, $3, $4, $5, to_timestamp($6, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+       RETURNING id`,
+      [fullname, email, category, requirements, file, date]
+    );
+    const newId = String(ins.rows[0].id);
+
+    // Append the id into the last CSV row we just wrote (adds 7th field)
+    try {
+      const rows = parseCsvOrders();
+      if (rows.length) {
+        const last = rows[rows.length - 1];
+        // If last row matches this order and has no id, add it
+        const same =
+          last.fullname === fullname &&
+          last.email === email &&
+          last.category === category &&
+          last.requirements === requirements &&
+          (last.file || '') === (file || '') &&
+          last.date === date &&
+          !last.id;
+        if (same) {
+          last.id = newId;
+          writeCsvOrders(rows);
+        }
+      }
+    } catch (e2) {
+      console.log('⚠️ Could not stamp DB id into CSV:', e2.message);
+    }
+  } catch (e) {
+    console.log('⚠️ DB insert failed, CSV still holds the order:', e.message);
+  }
 
   // Admin notification
   if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
@@ -159,35 +289,71 @@ app.post('/submit-order', upload.single('fileupload'), async (req, res) => {
 });
 
 // === Admin APIs ===
-app.get('/admin/api/orders-data', authMiddleware, (req, res) => {
-  if (!fs.existsSync('orders.csv')) return res.json([]);
-  const data = fs.readFileSync('orders.csv', 'utf8')
-    .split('\n').filter(l => l.trim() !== '');
-  const orders = data.map((line, i) => {
-    const parts = line.split(/","|^"|"$/g).filter(p => p);
-    return {
-      index: i,
-      fullname: parts[0],
-      email: parts[1],
-      category: parts[2],
-      requirements: parts[3],
-      file: parts[4],
-      date: parts[5]
-    };
-  });
-  res.json(orders);
+app.get('/admin/api/orders-data', authMiddleware, async (req, res) => {
+  await ensureCsvFromDb(); // if CSV was lost, repopulate from DB
+  const orders = parseCsvOrders();
+  return res.json(orders);
 });
 
-app.delete('/admin/api/order/:index', authMiddleware, (req, res) => {
+app.delete('/admin/api/order/:index', authMiddleware, async (req, res) => {
   const idx = parseInt(req.params.index, 10);
+
+  // Read CSV first (source of truth for admin ops)
   if (!fs.existsSync('orders.csv')) return res.status(400).send('No orders');
-  const lines = fs.readFileSync('orders.csv', 'utf8')
-    .split('\n').filter(l => l.trim() !== '');
-  if (idx < 0 || idx >= lines.length) return res.status(400).send('Invalid index');
-  lines.splice(idx, 1);
-  fs.writeFileSync('orders.csv', lines.join('\n') + (lines.length ? '\n' : ''));
+  const rows = parseCsvOrders();
+  if (idx < 0 || idx >= rows.length) return res.status(400).send('Invalid index');
+
+  const victim = rows[idx];
+
+  // Try DB delete (by id if present; else best-effort match by tuple)
+  try {
+    if (victim.id) {
+      await pool.query('DELETE FROM orders WHERE id = $1', [victim.id]);
+    } else {
+      await pool.query(
+        `DELETE FROM orders
+         WHERE id IN (
+           SELECT id FROM orders
+           WHERE fullname = $1 AND email = $2 AND category = $3 AND requirements = $4 AND COALESCE(file,'') = $5
+           ORDER BY created_at DESC
+           LIMIT 1
+         )`,
+        [victim.fullname, victim.email, victim.category, victim.requirements, victim.file || '']
+      );
+    }
+  } catch (e) {
+    console.log('⚠️ DB delete failed, proceeding with CSV delete:', e.message);
+  }
+
+  // CSV delete (existing behavior)
+  rows.splice(idx, 1);
+  writeCsvOrders(rows);
   res.send('Order deleted');
 });
+  // Mirror delete in DB first
+  await ensureCsvFromDb();
+  const rowsRJ = parseCsvOrders();
+  if (idx < 0 || idx >= rowsRJ.length) return res.status(400).send('Invalid index');
+
+  const victimRJ = rowsRJ[idx];
+  try {
+    if (victimRJ.id) {
+      await pool.query('DELETE FROM orders WHERE id = $1', [victimRJ.id]);
+    } else {
+      await pool.query(
+        `DELETE FROM orders
+         WHERE id IN (
+           SELECT id FROM orders
+           WHERE fullname = $1 AND email = $2 AND category = $3 AND requirements = $4 AND COALESCE(file,'') = $5
+           ORDER BY created_at DESC
+           LIMIT 1
+         )`,
+        [victimRJ.fullname, victimRJ.email, victimRJ.category, victimRJ.requirements, victimRJ.file || '']
+      );
+    }
+  } catch (e) {
+    console.log('⚠️ DB reject-delete failed, continuing with CSV + email:', e.message);
+  }
 
 // Reject order
 app.post('/admin/api/reject-order/:index', authMiddleware, async (req, res) => {
@@ -283,3 +449,4 @@ app.get('/admin/api/orders/pdf', authMiddleware, (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, ()=>console.log(`Backend running on port ${PORT}`));
+
