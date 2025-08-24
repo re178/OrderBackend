@@ -108,6 +108,8 @@ const app = express();
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+const useragent = require('express-useragent');
+app.use(useragent.express());
 
 // === Static files ===
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -161,6 +163,18 @@ app.post('/admin/api/login', (req, res) => {
 
 // === Visitor Tracking ===
 const visitorFile = path.join(__dirname, 'visitors.json');
+
+// helper to get IP properly
+function getClientIp(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
+}
+
+// daily auto-reset (24 hours)
+setInterval(() => {
+  fs.writeFileSync(visitorFile, JSON.stringify([], null, 2));
+  console.log('♻️ Visitor logs cleared (daily reset)');
+}, 24 * 60 * 60 * 1000);
+
 app.post('/log-visit', (req, res) => {
   let visitors = [];
   if (fs.existsSync(visitorFile)) {
@@ -168,9 +182,13 @@ app.post('/log-visit', (req, res) => {
   }
 
   visitors.push({
-    time: new Date().toISOString(),
-    page: req.body.page || 'unknown',
-    ip: req.ip
+    time: new Date().toLocaleString(),     // local format
+    page: req.body.page || req.originalUrl || 'unknown',
+    ip: getClientIp(req),
+    browser: req.useragent.browser,
+    os: req.useragent.os,
+    platform: req.useragent.platform,
+    source: req.useragent.source
   });
 
   fs.writeFileSync(visitorFile, JSON.stringify(visitors, null, 2));
@@ -184,6 +202,7 @@ app.get('/admin/api/get-visits', authMiddleware, (req, res) => {
   }
   res.json(visitors);
 });
+
 
 // === Lock/Unlock Orders ===
 const lockFile = path.join(__dirname, 'orders_locked.json');
@@ -446,7 +465,58 @@ app.get('/admin/api/orders/pdf', authMiddleware, (req, res) => {
 
   doc.end();
 });
+// PDF Generation (Visitors)
+app.get('/admin/api/visits/pdf', authMiddleware, (req, res) => {
+  if (!fs.existsSync(visitorFile)) return res.status(404).send('No visits logged');
+  const visitors = JSON.parse(fs.readFileSync(visitorFile, 'utf8'));
+
+  const doc = new PDFDocument({ margin:30, size:'A4' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename=visitors.pdf');
+  doc.pipe(res);
+
+  // Title + Subtitle
+  doc.fontSize(22).fillColor('#007BFF').text('Visitor Tracking Report', { align:'center' });
+  doc.moveDown(0.3);
+  doc.fontSize(14).fillColor('black').text('Website Visitors — Analytics Log', { align:'center' });
+  doc.moveDown(0.5);
+  doc.fontSize(10).fillColor('gray').text(`Generated: ${new Date().toLocaleString()}`, { align:'center' });
+  doc.moveDown(1);
+
+  // Table header
+  const headers = ['Time','Page','IP Address','Browser','OS','Platform','Source'];
+  const colWidths = [100, 90, 90, 70, 70, 70, 150];
+  let x = doc.x, y = doc.y;
+  doc.rect(x, y, 550, 20).fill('#007BFF');
+  doc.fillColor('white').fontSize(10);
+  headers.forEach((h, i) => {
+    doc.text(h, x + colWidths.slice(0,i).reduce((a,b)=>a+b,0) + 2, y+5, { width: colWidths[i]-4 });
+  });
+  doc.fillColor('black');
+  y += 20;
+
+  // Table rows
+  visitors.forEach(v => {
+    headers.forEach((h,i)=>{
+      const key = h.toLowerCase().replace(/ /g,'');
+      let val = v[ key ] || v[ h.toLowerCase() ] || '';
+      doc.text(val.toString(), x + colWidths.slice(0,i).reduce((a,b)=>a+b,0) + 2, y+3, { width: colWidths[i]-4 });
+    });
+    y += 20;
+    if (y > 750) { doc.addPage(); y = 50; }
+  });
+
+  // Rubber-stamp placeholder
+  doc.rect(400, 750, 150, 40).stroke();
+  doc.text('Stamp/Signature', 420, 765);
+
+  // Footer
+  doc.fontSize(9).fillColor('gray').text('Confidential — For Admin Use Only', 30, 800, { align:'center' });
+
+  doc.end();
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, ()=>console.log(`Backend running on port ${PORT}`));
+
 
