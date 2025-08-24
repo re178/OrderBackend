@@ -1,323 +1,361 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Admin Dashboard</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Backend DB & Visitors — Test Console</title>
 <style>
-  body { font-family: Arial, sans-serif; background: #f0f2f5; padding: 20px; }
-  h1 { text-align:center; color: #333; }
-  .card { max-width: 1100px; margin: 0 auto 20px; background: #fff; padding: 16px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,.06); }
-  .row { display: grid; gap: 12px; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  table { width:100%; border-collapse: collapse; margin-top: 12px; background: white; }
-  th, td { border:1px solid #ddd; padding:8px; text-align:left; vertical-align: top; }
-  th { background:#007BFF; color:white; }
-  button { padding:8px 12px; margin:2px; cursor:pointer; border-radius:8px; border: none; }
-  .btn { background:#007BFF; color:#fff; }
-  .btn-danger { background:#e53935; color:#fff; }
-  input, textarea { width: 100%; padding: 8px; border:1px solid #ccc; border-radius: 8px; }
-  .hidden { display:none; }
-  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; }
+  :root{--brand:#0d6efd;--bg:#f5f7fb;--card:#fff;--muted:#6c757d;--ok:#2e7d32;--warn:#b71840;}
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial; background:var(--bg); margin:0; padding:24px;}
+  h1{margin:0 0 16px; color:#222; text-align:center}
+  .wrap{max-width:1100px;margin:0 auto;display:grid;gap:16px}
+  .card{background:var(--card); border-radius:14px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.06);}
+  .row{display:grid; gap:10px}
+  .grid-2{display:grid; grid-template-columns: 1fr 1fr; gap:12px}
+  label{font-weight:600; font-size:.95rem}
+  input,textarea,select{width:100%; padding:10px 12px; border:1px solid #d0d7de; border-radius:10px; background:#fff; font:inherit}
+  textarea{min-height:90px}
+  button{appearance:none; border:0; border-radius:10px; padding:10px 14px; cursor:pointer; font-weight:600}
+  .btn{background:var(--brand); color:#fff}
+  .btn-outline{background:#fff; color:var(--brand); border:2px solid var(--brand)}
+  .btn-danger{background:var(--warn); color:#fff}
+  table{width:100%; border-collapse:collapse; margin-top:10px; font-size:.95rem; background:#fff}
+  th,td{border:1px solid #e5e7eb; padding:8px; text-align:left; vertical-align:top}
+  th{background:var(--brand); color:#fff; position:sticky; top:0}
+  .muted{color:var(--muted)}
+  .flex{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+  .right{justify-content:flex-end}
+  .badge{display:inline-block; padding:4px 8px; border-radius:999px; font-size:.8rem; font-weight:700}
+  .ok{background:#e7f5ee; color:var(--ok); border:1px solid #c9e7d5}
+  .csv{background:#eef0f6; color:#334155; border:1px solid #d7dbe6}
+  .err{background:#fde7ec; color:#9b1137; border:1px solid #f7c1cf}
+  .note{font-size:.9rem}
+  .hidden{display:none}
+  .topbar{display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap}
+  .code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:.9rem}
 </style>
 </head>
 <body>
-  <h1>Admin Dashboard</h1>
+  <h1>Backend Test Console</h1>
+  <div class="wrap">
 
-  <!-- Login Card -->
-  <div id="loginCard" class="card">
-    <h2>Admin Login</h2>
-    <div class="row">
-      <input type="password" id="adminPassword" placeholder="Enter admin password" />
-      <button class="btn" onclick="login()">Login</button>
-      <p id="loginMsg" style="color:#e53935;"></p>
-    </div>
-  </div>
-
-  <!-- Dashboard Card -->
-  <div id="dashCard" class="card hidden">
-    <div class="topbar">
-      <div>
-        <button class="btn" onclick="downloadPDF()">Download All Orders PDF</button>
-        <button class="btn" id="lockBtn" onclick="toggleOrders()">Lock/Unlock Orders</button>
-        <button class="btn-danger" onclick="logout()">Logout</button>
-        <button class="btn" style="margin-top:8px;" onclick="downloadVisitorPDF()">Download Visitor PDF</button>
+    <!-- Login -->
+    <div class="card">
+      <div class="topbar">
+        <strong>Admin Login</strong>
+        <div class="flex">
+          <span id="dbBadge" class="badge csv">DB: unknown</span>
+          <span id="authBadge" class="badge csv">Auth: logged out</span>
+        </div>
       </div>
-      <small id="statusText"></small>
+      <div class="flex">
+        <input id="adminPassword" type="password" placeholder="Enter admin password…" />
+        <button class="btn" onclick="login()">Login</button>
+        <button class="btn-outline" onclick="logout()">Logout</button>
+      </div>
+      <div class="muted note" id="loginMsg"></div>
     </div>
 
-    <h2>Orders List</h2>
-    <table id="visitorsTable">
-  <thead>
-    <tr>
-      <th>#</th>
-      <th>Page</th>
-      <th>IP</th>
-      <th>Time</th>
-      <th>Browser</th>
-      <th>OS</th>
-      <th>Platform</th>
-    </tr>
-  </thead>
-  <tbody><tr><td colspan="7">Loading…</td></tr></tbody>
-</table>
+    <!-- Quick actions -->
+    <div class="card">
+      <div class="topbar">
+        <strong>Quick Actions</strong>
+        <div class="flex right">
+          <button class="btn" onclick="downloadOrdersPDF()">Download Orders PDF</button>
+          <button class="btn" onclick="downloadVisitorsPDF()">Download Visitors PDF</button>
+        </div>
+      </div>
+      <div class="note muted">
+        • Use this page to verify DB connectivity and visitors logging.<br/>
+        • If orders show an <span class="badge ok">id</span> column with numbers, your **PostgreSQL is working**. If not, the system is using **CSV fallback** and still functional.
+      </div>
+    </div>
 
+    <!-- Create a test order -->
+    <div class="card">
+      <strong>Create Test Order</strong>
+      <div class="grid-2">
+        <div class="row">
+          <label>Full name</label>
+          <input id="o_name" placeholder="Jane Doe" />
+        </div>
+        <div class="row">
+          <label>Email</label>
+          <input id="o_email" type="email" placeholder="jane@example.com" />
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="row">
+          <label>Category</label>
+          <input id="o_category" placeholder="Website / Graphics / Other" />
+        </div>
+        <div class="row">
+          <label>Optional file</label>
+          <input id="o_file" type="file" />
+        </div>
+      </div>
+      <div class="row">
+        <label>Requirements</label>
+        <textarea id="o_requirements" placeholder="Describe your order…"></textarea>
+      </div>
+      <div class="flex right">
+        <button class="btn" onclick="submitOrder()">Submit Test Order</button>
+      </div>
+      <div id="orderMsg" class="note muted"></div>
+    </div>
 
+    <!-- Orders -->
+    <div class="card">
+      <div class="topbar">
+        <strong>Orders (live from API)</strong>
+        <div class="flex right">
+          <button class="btn-outline" onclick="loadOrders()">Refresh</button>
+        </div>
+      </div>
+      <div class="note muted">Requires admin login. If you see rows with an <span class="code">id</span> value, DB is active. If <span class="code">id</span> is missing for all rows, CSV fallback is in effect.</div>
+      <table id="ordersTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>id</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Category</th>
+            <th>Requirements</th>
+            <th>File</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="8">Login and click “Refresh”.</td></tr></tbody>
+      </table>
+    </div>
 
-
-    <!-- Visitor Stats -->
-    <div class="card" style="margin-top:16px;">
-      <h2>Visitor Stats</h2>
+    <!-- Visitors -->
+    <div class="card">
+      <div class="topbar">
+        <strong>Visitors (live from API)</strong>
+        <div class="flex right">
+          <button class="btn-outline" onclick="loadVisitors()">Refresh</button>
+        </div>
+      </div>
+      <div class="note muted">This page auto-logs a visit below when loaded.</div>
       <table id="visitorsTable">
         <thead>
           <tr>
             <th>#</th>
+            <th>Time</th>
             <th>Page</th>
             <th>IP</th>
-            <th>Time</th>
+            <th>Browser</th>
+            <th>OS</th>
+            <th>Platform</th>
+            <th>Source (UA)</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="4">Loading…</td></tr></tbody>
+        <tbody><tr><td colspan="8">Login and click “Refresh”.</td></tr></tbody>
       </table>
     </div>
 
-    <div class="grid-2" style="margin-top: 16px;">
-      <div>
-        <h3>Send Email to One Client</h3>
-        <input type="email" id="singleEmail" placeholder="Client email" />
-        <input type="text" id="emailSubject" placeholder="Subject" />
-        <textarea id="emailMessage" placeholder="Message (supports HTML)"></textarea>
-        <button class="btn" onclick="sendEmail()">Send Email</button>
-      </div>
-
-      <div>
-        <h3>Send Email to All Clients</h3>
-        <input type="text" id="allSubject" placeholder="Subject" />
-        <textarea id="allMessage" placeholder="Message (supports HTML)"></textarea>
-        <button class="btn" onclick="sendEmailAll()">Send to All</button>
+    <!-- Endpoint helper -->
+    <div class="card">
+      <strong>Endpoints (for reference)</strong>
+      <div class="code">
+        POST /admin/api/login — { password } → token<br/>
+        GET  /admin/api/orders-data — Bearer token<br/>
+        GET  /admin/api/orders/pdf — Bearer token (download)<br/>
+        POST /submit-order — multipart/form-data<br/>
+        POST /log-visit — { page }<br/>
+        GET  /admin/api/get-visits — Bearer token<br/>
+        GET  /admin/api/visits/pdf — Bearer token (download)
       </div>
     </div>
+
   </div>
 
 <script>
 const API = '/admin/api';
+
+// ====== helper: token storage ======
 function getToken(){ return localStorage.getItem('admintoken'); }
 function setToken(t){ localStorage.setItem('admintoken', t); }
 function clearToken(){ localStorage.removeItem('admintoken'); }
+function setAuthBadge(on){
+  const badge = document.getElementById('authBadge');
+  if(on){ badge.textContent = 'Auth: logged in'; badge.className='badge ok'; }
+  else  { badge.textContent = 'Auth: logged out'; badge.className='badge csv'; }
+}
+setAuthBadge(!!getToken());
 
-function show(el){ el.classList.remove('hidden'); }
-function hide(el){ el.classList.add('hidden'); }
+// ====== visit tracker (runs on page load) ======
+(async function trackVisit(){
+  try{
+    await fetch('/log-visit', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ page: location.pathname + location.search })
+    });
+  }catch(e){ /* ignore */ }
+})();
 
+// ====== auth fetch ======
+async function authFetch(url, options={}){
+  const token = getToken();
+  const headers = Object.assign({ 'Authorization':'Bearer '+token }, options.headers||{});
+  return fetch(url, Object.assign({}, options, { headers }));
+}
+
+// ====== login / logout ======
 async function login(){
-  const password = document.getElementById('adminPassword').value.trim();
+  const pw = document.getElementById('adminPassword').value.trim();
   const msg = document.getElementById('loginMsg');
   msg.textContent = '';
   try{
     const res = await fetch(`${API}/login`, {
       method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({ password })
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ password: pw })
     });
-    if(!res.ok){ msg.textContent = 'Invalid password'; return; }
+    if(!res.ok){ msg.textContent='Invalid password'; setAuthBadge(false); return; }
     const data = await res.json();
     setToken(data.token);
-    document.getElementById('adminPassword').value = '';
-    await refreshUI();
+    document.getElementById('adminPassword').value='';
+    setAuthBadge(true);
+    await Promise.all([loadOrders(), loadVisitors()]);
   }catch(e){
-    msg.textContent = 'Network error';
+    msg.textContent='Network error';
+    setAuthBadge(false);
   }
 }
+function logout(){ clearToken(); setAuthBadge(false); }
 
-function logout(){
-  clearToken();
-  refreshUI();
-}
+// ====== submit test order ======
+async function submitOrder(){
+  const name = document.getElementById('o_name').value.trim();
+  const email = document.getElementById('o_email').value.trim();
+  const category = document.getElementById('o_category').value.trim();
+  const reqs = document.getElementById('o_requirements').value.trim();
+  const file = document.getElementById('o_file').files[0];
+  const msg = document.getElementById('orderMsg');
+  msg.textContent='';
 
-async function authFetch(url, options={}){
-  const token = getToken();
-  const headers = Object.assign({ 'Authorization': 'Bearer ' + token }, options.headers || {});
-  const merged = Object.assign({}, options, { headers });
-  return fetch(url, merged);
-}
-
-async function fetchOrders(){
-  const res = await authFetch(`${API}/orders-data`);
-  if(!res.ok) throw new Error('Auth fail or server error');
-  return res.json();
-}
-
-// === DELETE ORDER ===
-async function deleteOrder(index){
-  if(!confirm('Are you sure you want to delete this order?')) return;
-  const res = await authFetch(`${API}/order/${index}`, { method:'DELETE' });
-  if(!res.ok){ alert('Delete failed'); return; }
-  loadOrders();
-}
-
-// === DOWNLOAD PDF ===
-function downloadPDF(){
-  const token = getToken();
-  authFetch(`${API}/orders/pdf`).then(async res=>{
-    if(!res.ok){ alert('Cannot download'); return; }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'orders.pdf'; a.click();
-    URL.revokeObjectURL(url);
-  });
-}
-
-// === SEND EMAILS ===
-async function sendEmail(){
-  const email = document.getElementById('singleEmail').value.trim();
-  const subject = document.getElementById('emailSubject').value.trim();
-  const message = document.getElementById('emailMessage').value.trim();
-  const res = await authFetch(`${API}/email-client`, {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json' },
-    body: JSON.stringify({ email, subject, message })
-  });
-  alert(await res.text());
-}
-
-async function sendEmailAll(){
-  const subject = document.getElementById('allSubject').value.trim();
-  const message = document.getElementById('allMessage').value.trim();
-  const res = await authFetch(`${API}/email-all`, {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json' },
-    body: JSON.stringify({ subject, message })
-  });
-  alert(await res.text());
-}
-
-// === VISITOR STATS ===
-async function fetchVisitors() {
-  try {
-    const res = await authFetch(`${API}/get-visits`);
-    if(!res.ok) throw new Error('Failed to get visitors');
-    const visitors = await res.json();
-    const tbody = document.querySelector('#visitorsTable tbody');
-    tbody.innerHTML = '';
-    if(visitors.length === 0){
-      tbody.innerHTML = '<tr><td colspan="4">No visitors yet.</td></tr>';
-      return;
-    }
-    visitors.forEach((v,i) => {
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td>${i+1}</td>
-    <td>${v.page}</td>
-    <td>${v.ip}</td>
-    <td>${new Date(v.time).toLocaleString()}</td>
-    <td>${v.browser || '-'}</td>
-    <td>${v.os || '-'}</td>
-    <td>${v.platform || '-'}</td>
-  `;
-  tbody.appendChild(tr);
-});
-
-    });
-  } catch(e){
-    console.log('Visitor fetch error', e);
-  }
-}
-
-// === LOCK / UNLOCK ORDERS ===
-async function toggleOrders() {
-  const btn = document.getElementById('lockBtn');
-  try {
-    const locked = btn.dataset.locked === 'true';
-    const url = locked ? `${API}/unlock-orders` : `${API}/lock-orders`;
-    const res = await authFetch(url, { method:'POST' });
-    const data = await res.json();
-    btn.dataset.locked = data.locked;
-    btn.textContent = data.locked ? 'Unlock Orders' : 'Lock Orders';
-    alert('Orders ' + (data.locked ? 'locked' : 'unlocked'));
-  } catch(e){ alert('Failed to toggle orders'); }
-}
-
-// === REJECT ORDER ===
-async function rejectOrder(index){
-  if(!confirm('Are you sure you want to reject this order?')) return;
   try{
-    const res = await authFetch(`${API}/reject-order/${index}`, { method:'POST' });
-    alert(await res.text());
-    loadOrders();
-  } catch(e){ alert('Failed to reject order'); }
+    const fd = new FormData();
+    fd.append('fullname', name);
+    fd.append('email', email);
+    fd.append('category', category);
+    fd.append('requirements', reqs);
+    if(file) fd.append('fileupload', file);
+
+    const res = await fetch('/submit-order', { method:'POST', body: fd });
+    const text = await res.text();
+    msg.textContent = text || 'Submitted.';
+    // after submit, try to reload orders (if logged in)
+    if(getToken()) loadOrders();
+  }catch(e){
+    msg.textContent='Submit failed.';
+  }
 }
 
-// === LOAD ORDERS WITH REJECT BUTTON ===
+// ====== load orders (detect DB vs CSV) ======
 async function loadOrders(){
   const tbody = document.querySelector('#ordersTable tbody');
   tbody.innerHTML = '<tr><td colspan="8">Loading…</td></tr>';
   try{
-    const orders = await fetchOrders();
-    tbody.innerHTML = '';
-    if(orders.length === 0){
+    const res = await authFetch(`${API}/orders-data`);
+    if(!res.ok){ tbody.innerHTML='<tr><td colspan="8">Auth failed.</td></tr>'; setDbBadge('unknown'); return; }
+    const rows = await res.json();
+    tbody.innerHTML='';
+    if(rows.length===0){
       tbody.innerHTML = '<tr><td colspan="8">No orders yet.</td></tr>';
+      setDbBadge('unknown');
       return;
     }
-    orders.forEach(order => {
+    let hasId = false;
+    rows.forEach((r,i)=>{
+      if(r.id) hasId = true;
+      const fileCell = r.file ? `<a href="/uploads/${r.file}" target="_blank">file</a>` : '—';
+      const when = r.date ? new Date(r.date).toLocaleString() : '—';
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${order.index + 1}</td>
-        <td>${order.fullname}</td>
-        <td>${order.email}</td>
-        <td>${order.category}</td>
-        <td>${order.requirements}</td>
-        <td>${order.file ? '<a href="/uploads/'+order.file+'" target="_blank">Download</a>' : 'No file'}</td>
-        <td>${new Date(order.date).toLocaleString()}</td>
-        <td>
-          <button class="btn-danger" onclick="deleteOrder(${order.index})">Delete</button>
-          <button class="btn-danger" style="background:#e69138;" onclick="rejectOrder(${order.index})">Reject</button>
-        </td>
+        <td>${i+1}</td>
+        <td>${r.id ? r.id : ''}</td>
+        <td>${escapeHtml(r.fullname||'')}</td>
+        <td>${escapeHtml(r.email||'')}</td>
+        <td>${escapeHtml(r.category||'')}</td>
+        <td>${escapeHtml(r.requirements||'')}</td>
+        <td>${fileCell}</td>
+        <td>${when}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    setDbBadge(hasId ? 'db' : 'csv');
+  }catch(e){
+    tbody.innerHTML = '<tr><td colspan="8">Error loading orders.</td></tr>';
+    setDbBadge('unknown');
+  }
+}
+function setDbBadge(mode){
+  const el = document.getElementById('dbBadge');
+  if(mode==='db'){ el.textContent='DB: connected'; el.className='badge ok'; }
+  else if(mode==='csv'){ el.textContent='DB: CSV fallback'; el.className='badge csv'; }
+  else { el.textContent='DB: unknown'; el.className='badge csv'; }
+}
+
+// ====== load visitors ======
+async function loadVisitors(){
+  const tbody = document.querySelector('#visitorsTable tbody');
+  tbody.innerHTML = '<tr><td colspan="8">Loading…</td></tr>';
+  try{
+    const res = await authFetch(`${API}/get-visits`);
+    if(!res.ok){ tbody.innerHTML='<tr><td colspan="8">Auth failed.</td></tr>'; return; }
+    const rows = await res.json();
+    tbody.innerHTML='';
+    if(rows.length===0){
+      tbody.innerHTML = '<tr><td colspan="8">No visitors yet.</td></tr>';
+      return;
+    }
+    rows.forEach((v,i)=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${i+1}</td>
+        <td>${v.time || ''}</td>
+        <td>${escapeHtml(v.page||'')}</td>
+        <td>${escapeHtml(v.ip||'')}</td>
+        <td>${escapeHtml(v.browser||'')}</td>
+        <td>${escapeHtml(v.os||'')}</td>
+        <td>${escapeHtml(v.platform||'')}</td>
+        <td class="code">${escapeHtml(v.source||'')}</td>
       `;
       tbody.appendChild(tr);
     });
   }catch(e){
-    tbody.innerHTML = '<tr><td colspan="8">Auth required or server error.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8">Error loading visitors.</td></tr>';
   }
 }
 
-// === REFRESH UI ===
-async function refreshUI(){
-  const token = getToken();
-  const loginCard = document.getElementById('loginCard');
-  const dashCard  = document.getElementById('dashCard');
-  const statusTxt = document.getElementById('statusText');
-
-  if(token){
-    hide(loginCard);
-    show(dashCard);
-    statusTxt.textContent = 'Logged in';
-    loadOrders();
-    fetchVisitors();
-    // Initial lock button text
-    const btn = document.getElementById('lockBtn');
-    btn.dataset.locked = 'false';
-    btn.textContent = 'Lock Orders';
-  } else {
-    show(loginCard);
-    hide(dashCard);
-    statusTxt.textContent = '';
-  }
+// ====== PDF downloads ======
+async function downloadOrdersPDF(){
+  const res = await authFetch(`${API}/orders/pdf`);
+  if(!res.ok){ alert('Cannot download Orders PDF'); return; }
+  const blob = await res.blob(); triggerDownload(blob,'orders.pdf');
+}
+async function downloadVisitorsPDF(){
+  const res = await authFetch(`${API}/visits/pdf`);
+  if(!res.ok){ alert('Cannot download Visitors PDF'); return; }
+  const blob = await res.blob(); triggerDownload(blob,'visitors.pdf');
+}
+function triggerDownload(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
 }
 
-refreshUI();
-  // === DOWNLOAD VISITOR PDF ===
-function downloadVisitorPDF(){
-  authFetch(`${API}/visits/pdf`).then(async res=>{
-    if(!res.ok){ alert('Cannot download visitor PDF'); return; }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'visitors.pdf'; a.click();
-    URL.revokeObjectURL(url);
-  });
+// ====== small helpers ======
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 }
-
 </script>
 </body>
 </html>
-
