@@ -41,26 +41,29 @@
         <button class="btn" onclick="downloadPDF()">Download All Orders PDF</button>
         <button class="btn" id="lockBtn" onclick="toggleOrders()">Lock/Unlock Orders</button>
         <button class="btn-danger" onclick="logout()">Logout</button>
+        <button class="btn" style="margin-top:8px;" onclick="downloadVisitorPDF()">Download Visitor PDF</button>
       </div>
       <small id="statusText"></small>
     </div>
 
     <h2>Orders List</h2>
-    <table id="ordersTable">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Name</th>
-          <th>Email</th>
-          <th>Category</th>
-          <th>Requirements</th>
-          <th>File</th>
-          <th>Date</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+    <table id="visitorsTable">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Page</th>
+      <th>IP</th>
+      <th>Time</th>
+      <th>Browser</th>
+      <th>OS</th>
+      <th>Platform</th>
+    </tr>
+  </thead>
+  <tbody><tr><td colspan="7">Loading…</td></tr></tbody>
+</table>
+
+
+
 
     <!-- Visitor Stats -->
     <div class="card" style="margin-top:16px;">
@@ -201,14 +204,19 @@ async function fetchVisitors() {
       return;
     }
     visitors.forEach((v,i) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${i+1}</td>
-        <td>${v.page}</td>
-        <td>${v.ip}</td>
-        <td>${new Date(v.time).toLocaleString()}</td>
-      `;
-      tbody.appendChild(tr);
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${i+1}</td>
+    <td>${v.page}</td>
+    <td>${v.ip}</td>
+    <td>${new Date(v.time).toLocaleString()}</td>
+    <td>${v.browser || '-'}</td>
+    <td>${v.os || '-'}</td>
+    <td>${v.platform || '-'}</td>
+  `;
+  tbody.appendChild(tr);
+});
+
     });
   } catch(e){
     console.log('Visitor fetch error', e);
@@ -297,6 +305,19 @@ async function refreshUI(){
 }
 
 refreshUI();
+  // === DOWNLOAD VISITOR PDF ===
+function downloadVisitorPDF(){
+  authFetch(`${API}/visits/pdf`).then(async res=>{
+    if(!res.ok){ alert('Cannot download visitor PDF'); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'visitors.pdf'; a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
 </script>
 </body>
 </html>
+
