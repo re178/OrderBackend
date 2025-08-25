@@ -350,9 +350,17 @@ app.delete('/admin/api/order/:index', authMiddleware, async (req, res) => {
   res.send('Order deleted');
 });
   // Mirror delete in DB first
+  // Inside an async function, e.g., in your DELETE route:
+app.delete('/admin/api/order/:index', authMiddleware, async (req, res) => {
+  const idx = parseInt(req.params.index, 10);
+
   await ensureCsvFromDb();
   const rowsRJ = parseCsvOrders();
   if (idx < 0 || idx >= rowsRJ.length) return res.status(400).send('Invalid index');
+
+  // ...rest of your delete logic
+});
+
 
   const victimRJ = rowsRJ[idx];
   try {
@@ -518,5 +526,6 @@ app.get('/admin/api/visits/pdf', authMiddleware, (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, ()=>console.log(`Backend running on port ${PORT}`));
+
 
 
